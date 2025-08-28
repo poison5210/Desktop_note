@@ -1,0 +1,42 @@
+{
+  "name": "desktop-sticky-notes",
+  "version": "1.0.0",
+  "description": "轻量级 Windows 桌面便签应用（Electron + HTML 原型）",
+  "main": "main/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.example.desktopstickynotes",
+    "productName": "桌面便签",
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "main/**/*",
+      "icon.ico",
+      "icon.png",
+      "sticky_note_prototype_updated.html",
+      "Sticky_Note_Prototype_Dev_Doc.markdown",
+      "说明文档.markdown"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}
+
+

@@ -1,0 +1,464 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>桌面便签应用原型图（设置弹框颜色统一）</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: transparent;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+    }
+    .note-container {
+      background: rgba(255, 250, 200, 0.9); /* 默认淡黄色背景，透明度 0.9 */
+      border-radius: 12px;
+      padding: 8px;
+      width: 100vw;
+      height: 100vh;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-sizing: border-box;
+      overflow: hidden;
+      position: relative;
+    }
+    .title-bar {
+      -webkit-app-region: drag;
+    }
+    .note-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .circle {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #333;
+      border-radius: 50%;
+      margin-right: 6px;
+      cursor: pointer;
+    }
+    .circle.checked {
+      background: #333;
+    }
+    .note-text {
+      flex: 1;
+      font-size: 14px;
+      color: #333; /* 默认字体颜色 */
+      border: none;
+      background: transparent;
+      outline: none;
+      width: 100%;
+    }
+    .note-text.strike {
+      text-decoration: line-through;
+      color: #666;
+    }
+    .delete-btn {
+      color: #333; /* 简约黑白风格 */
+      font-size: 14px;
+      cursor: pointer;
+      margin-left: 6px;
+      transition: transform 0.2s, color 0.2s;
+    }
+    .delete-btn:hover {
+      transform: scale(1.2);
+      color: #555;
+    }
+    .close-btn {
+      color: #333; /* 简约黑白风格 */
+      font-size: 16px;
+      cursor: pointer;
+      transition: transform 0.2s, color 0.2s;
+      font-weight: bold;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      -webkit-app-region: no-drag;
+    }
+    .close-btn:hover {
+      transform: scale(1.2);
+      color: #555;
+      background: #e5e5e5; /* 悬浮时背景变灰 */
+    }
+    #new-note {
+      background: transparent;
+      outline: none;
+      border: none;
+      width: 100%;
+      padding: 6px;
+      border-top: 1px solid #e5e5e5;
+      font-size: 14px;
+      color: #333;
+    }
+    .icon-btn {
+      color: #333; /* 简约黑白风格 */
+      font-size: 16px;
+      cursor: pointer;
+      transition: color 0.2s;
+      margin-left: 8px;
+      -webkit-app-region: no-drag;
+    }
+    .icon-btn:hover {
+      color: #555;
+    }
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+      fill: #333;
+    }
+    .icon-btn:hover svg {
+      fill: #555;
+    }
+    .icon-btn:hover {
+      transform: scale(1.2);
+      background: #e5e5e5;
+      border-radius: 50%;
+    }
+    #pin-btn { margin-right: 15px; }
+    .settings-panel {
+      display: none;
+      position: absolute;
+      top: 40px;
+      right: 8px;
+      background: rgba(255, 250, 200, 0.9); /* 与便签背景统一 */
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      -webkit-app-region: no-drag;
+      width: 220px;
+    }
+    .settings-panel.active {
+      display: block;
+    }
+    .content-area {
+      transition: opacity 0.3s;
+    }
+    .content-area.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="note-container" id="note-container">
+    <!-- 顶部：标题和控制图标 -->
+    <div class="flex justify-between items-center p-2 title-bar">
+      <span class="text-base font-semibold">便签</span>
+      <div class="flex items-center">
+        <span class="icon-btn" id="settings-btn" title="设置"></span>
+        <span class="icon-btn" id="visibility-btn" title="显示/隐藏"></span>
+        <span class="icon-btn" id="pin-btn" title="置顶/取消置顶"></span>
+        <span class="close-btn" title="关闭">✕</span>
+      </div>
+    </div>
+    <!-- 设置弹框 -->
+    <div id="settings-panel" class="settings-panel">
+      <div class="p-2">
+        <label for="opacity-slider" class="text-xs">透明度</label>
+        <input id="opacity-slider" type="range" min="0" max="1" step="0.1" value="0.9" style="width: 100%">
+      </div>
+      <div class="p-2 flex items-center justify-between">
+        <label for="bg-color-picker" class="text-xs">背景</label>
+        <input id="bg-color-picker" type="color" value="#fffac8" style="width: 44px; height: 24px;">
+        <label for="text-color-picker" class="text-xs ml-2">字体</label>
+        <input id="text-color-picker" type="color" value="#333333" style="width: 44px; height: 24px;">
+      </div>
+      <div class="p-2 flex items-center justify-between">
+        <span class="text-xs">默认数据目录</span>
+        <button id="choose-dir-btn" class="text-xs" style="border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px;">选择目录</button>
+      </div>
+    </div>
+    <!-- 内容区域 -->
+    <div class="content-area" id="content-area">
+      <!-- 便签列表 -->
+      <div class="p-2" id="note-list">
+        <div class="note-item">
+          <div class="circle" data-index="0"></div>
+          <input class="note-text" value="买牛奶" data-index="0">
+          <span class="delete-btn" data-index="0">✕</span>
+        </div>
+        <div class="note-item">
+          <div class="circle checked" data-index="1"></div>
+          <input class="note-text strike" value="完成文档" data-index="1">
+          <span class="delete-btn" data-index="1">✕</span>
+        </div>
+        <div class="note-item">
+          <div class="circle" data-index="2"></div>
+          <input class="note-text" value="约会提醒" data-index="2">
+          <span class="delete-btn" data-index="2">✕</span>
+        </div>
+      </div>
+      <!-- 新便签输入框 -->
+      <input id="new-note" type="text" placeholder="输入新便签...">
+    </div>
+  </div>
+
+  <script type="module">
+    // 获取 DOM 元素
+    const noteContainer = document.getElementById('note-container');
+    const noteList = document.getElementById('note-list');
+    const newNoteInput = document.getElementById('new-note');
+    const contentArea = document.getElementById('content-area');
+    const settingsPanel = document.getElementById('settings-panel');
+    const settingsBtn = document.getElementById('settings-btn');
+    const visibilityBtn = document.getElementById('visibility-btn');
+    const pinBtn = document.getElementById('pin-btn');
+    const opacitySlider = document.getElementById('opacity-slider');
+    const bgColorPicker = document.getElementById('bg-color-picker');
+    const textColorPicker = document.getElementById('text-color-picker');
+
+    // 图标 SVG
+    const SVG_PIN = `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M1017.302616 364.657556c-7.597032 13.994533-21.691527 25.490043-47.381491 25.490043-2.499024 0-5.098009-0.099961-7.796955-0.299883h-65.07458c-9.39633 0-18.292854 4.098399-24.390472 11.295587L678.335025 629.654041c-17.992971 21.091761-28.588832 47.481453-30.288168 75.170637l-6.697384 111.25654c-0.99961 15.593909-6.997267 30.588052-17.693089 41.9836-7.397111 7.896915-17.293245 14.594299-30.288168 15.793831-1.299492 0.099961-2.598985 0.199922-3.798517 0.199922-11.49551 0-22.491214-4.798126-30.688012-12.994924l-0.199922-0.199922-147.542366-149.541585L7.597032 1021.700898l-2.998828 2.299102 2.299102-2.998829 310.378758-403.542366-149.441624-147.542366-0.199922-0.199922c-9.096447-9.096447-13.994533-21.691527-12.795002-34.486529 1.199531-12.894963 7.996876-22.891058 15.79383-30.288168 11.395549-10.695822 26.389692-16.79344 41.983601-17.693089l111.25654-6.697384c27.689184-1.699336 54.078875-12.295197 75.170636-30.288169L627.4549 155.939086c7.197189-6.097618 11.295588-14.994143 11.295588-24.390472V66.474034c-2.499024-30.688012 9.796173-46.781726 25.19016-55.178446 8.296759-4.498243 17.393206-6.697384 26.389692-6.697384 14.794221 0 29.488481 5.897696 40.384225 16.79344l0.099961 0.099961 137.246388 138.245997 0.699726 0.699727 138.245998 137.346349 0.099961 0.099961c17.693089 17.693089 22.191332 44.882468 10.196017 66.773917z"></path></svg>`;
+    const SVG_UNPIN = `<svg viewBox=\"0 0 1024 1024\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M702.725498 84.067161L822.778602 204.919953l0.099961 0.099961 0.099961 0.099961 0.699727 0.699727 0.099961 0.099961 0.099961 0.099961L944.531043 325.872706h-47.581414c-28.188989 0-54.878563 12.295197-73.071456 33.786802L629.55408 588.170246c-26.789535 31.4877-42.883249 71.472081-45.382272 112.755955l-5.397892 89.265131-340.367044-340.467006 89.265131-5.397891c41.183913-2.499024 81.268255-18.592737 112.755955-45.382273l228.510738-194.324092c21.491605-18.292854 33.786802-44.882468 33.786802-73.071456V84.067161zM690.33034 4.598204c-8.996486 0-18.092932 2.199141-26.389692 6.697384-15.294026 8.39672-27.689184 24.490433-25.19016 55.178446v65.07458c0 9.39633-4.098399 18.292854-11.295588 24.390472L398.944162 350.263178c-21.091761 17.992971-47.481453 28.588832-75.170636 30.288169l-111.25654 6.697384c-15.593909 0.899649-30.588052 6.997267-41.983601 17.693089-7.796954 7.397111-14.594299 17.293245-15.79383 30.288168-1.199531 12.795002 3.698555 25.390082 12.795002 34.486529l0.199922 0.199922 149.541585 147.542366L6.897306 1021.001171l-2.299102 2.998829 2.998828-2.299102 403.542367-310.378758 147.542366 149.541585 0.199922 0.199922c8.196798 8.196798 19.192503 12.994924 30.688012 12.994924 1.299492 0 2.598985-0.099961 3.798517-0.199922 12.894963-1.199531 22.891058-7.996876 30.288168-15.793831 10.695822-11.395549 16.79344-26.389692 17.693089-41.9836l6.697384-111.25654c1.699336-27.689184 12.295197-54.078875 30.288168-75.170637L872.659118 401.143303c6.097618-7.197189 14.994143-11.295588 24.390472-11.295587h65.07458c2.698946 0.199922 5.29793 0.299883 7.796955 0.299883 25.689965 0 39.784459-11.49551 47.381491-25.490043 11.995314-21.891449 7.497071-49.180789-10.096056-66.773917l-0.099961-0.099961-138.245998-137.346349-0.699726-0.699727L730.814526 21.591566l-0.099961-0.099961c-10.995705-10.995705-25.590004-16.893401-40.384225-16.893401z\"></path></svg>`;
+    const SVG_EYE = `<svg t="1756287322458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2204" width="200" height="200"><path d="M515.328 821.76c-214.272 0-393.984-188.672-461.312-269.568-26.624-32-26.624-78.592 0-110.592 67.328-81.152 247.04-269.568 461.312-269.568 214.528 0 393.984 188.672 461.312 269.568 26.624 32 26.624 78.592 0 110.592C909.568 633.344 729.856 821.76 515.328 821.76z m0-588.544c-188.416 0-352.256 173.056-413.952 247.552-7.68 9.216-7.68 22.784 0 32.256 61.696 74.496 225.792 247.552 413.952 247.552 188.416 0 352.256-173.056 413.952-247.552 7.68-9.216 7.68-22.784 0-32.256-61.44-74.496-225.536-247.552-413.952-247.552z" fill="#060001" p-id="2205"></path><path d="M514.048 652.288c-86.016 0-156.16-70.144-156.16-156.16s70.144-156.16 156.16-156.16 156.16 70.144 156.16 156.16-69.888 156.16-156.16 156.16z m0-250.88c-52.224 0-94.72 42.496-94.72 94.72s42.496 94.72 94.72 94.72 94.72-42.496 94.72-94.72-42.496-94.72-94.72-94.72z" fill="#060001" p-id="2206"></path></svg>`
+    const SVG_EYE_OFF = `<svg t="1756287378467" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2353" width="200" height="200"><path d="M227.84 707.84c-6.656 0-13.056-2.048-18.688-6.4-68.096-52.224-121.088-110.08-153.6-149.248-26.624-32-26.624-78.592 0-110.592C122.88 360.448 302.592 172.032 516.864 172.032c50.944 0 103.424 10.752 156.16 31.744 15.872 6.4 23.296 24.32 17.152 39.936-6.4 15.872-24.32 23.296-39.936 17.152-45.312-18.176-90.368-27.392-133.376-27.392-188.416 0-352.256 173.056-413.952 247.552-7.68 9.216-7.68 22.784 0 32.256C133.12 549.632 183.04 603.904 246.528 652.8c13.568 10.24 15.872 29.696 5.632 43.008-6.144 7.936-15.104 12.032-24.32 12.032zM516.608 821.76c-74.24 0-150.784-22.528-228.096-66.816-14.592-8.448-19.712-27.136-11.264-41.984 8.448-14.592 27.136-19.712 41.984-11.264 67.84 38.912 134.144 58.88 197.376 58.88 188.416 0 352.256-173.056 413.952-247.552 7.68-9.216 7.68-22.784 0-32.256-35.072-42.24-107.52-121.344-199.936-178.688-14.336-8.96-18.944-27.904-9.984-42.24 8.96-14.336 27.904-18.944 42.24-9.984 99.84 61.952 177.408 146.688 214.784 191.744 26.624 32 26.624 78.592 0 110.592C910.848 633.344 731.136 821.76 516.608 821.76z" fill="#060001" p-id="2354"></path><path d="M391.68 547.584c-14.848 0-27.648-10.752-30.208-25.6-1.536-8.448-2.048-17.152-2.048-25.856 0-86.016 70.144-156.16 156.16-156.16 6.656 0 13.568 0.512 20.224 1.28 16.896 2.304 28.672 17.664 26.624 34.304-2.048 16.896-17.664 28.672-34.304 26.624-4.096-0.512-8.192-0.768-12.288-0.768-52.224 0-94.72 42.496-94.72 94.72 0 5.376 0.512 10.496 1.28 15.616 2.816 16.64-8.448 32.512-25.344 35.328-2.048 0.512-3.84 0.512-5.376 0.512zM515.328 652.288c-34.56 0-67.328-11.008-94.72-32-13.568-10.24-16.128-29.44-5.888-43.008 10.24-13.568 29.44-16.128 43.008-5.888 16.64 12.544 36.352 19.456 57.344 19.456 52.224 0 94.72-42.496 94.72-94.72 0-24.576-9.216-47.872-26.368-65.536-11.776-12.288-11.264-31.744 1.024-43.52 12.288-11.776 31.744-11.264 43.52 1.024 27.904 29.184 43.264 67.584 43.264 108.032 0.256 86.272-69.632 156.16-155.904 156.16z" fill="#060001" p-id="2355"></path><path d="M210.176 836.096c-7.68 0-15.616-2.816-21.504-8.704-12.032-11.776-12.288-31.232-0.256-43.52l609.28-619.008c11.776-12.032 31.232-12.288 43.52-0.256 12.032 11.776 12.288 31.232 0.256 43.52L231.936 826.88c-5.888 6.144-13.824 9.216-21.76 9.216z" fill="#060001" p-id="2356"></path></svg>`
+    const SVG_SETTINGS = `<svg viewBox=\"0 0 1024 1024\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M482.88 112l-17.28 90.688-20.64 4.512a309.696 309.696 0 0 0-99.776 41.088l-18.688 11.84-73.28-55.04-44.64 44.64 51.904 76.416-11.392 17.76a310.016 310.016 0 0 0-41.568 99.584l-4.8 21.6-90.72 12.896v63.104l90.688 17.312 4.512 20.64a309.984 309.984 0 0 0 41.088 99.776l11.84 18.688-55.04 73.28 44.64 44.64 76.416-51.904 17.76 11.392a310.016 310.016 0 0 0 99.584 41.568l21.6 4.8 12.896 90.72h63.104l17.312-90.688 20.64-4.512a309.984 309.984 0 0 0 99.776-41.088l18.688-11.84 73.28 55.04 44.64-44.64-51.904-76.416 11.392-17.76a310.016 310.016 0 0 0 41.568-99.584l4.8-21.6 90.72-12.896V482.88l-90.688-17.312-4.512-20.64a309.984 309.984 0 0 0-41.088-99.776l-11.84-18.688 55.04-73.28-44.64-44.64-76.416 51.904-17.76-11.392a310.144 310.144 0 0 0-99.584-41.568l-21.6-4.8-12.896-90.72H482.88zM410.56 149.856l19.424-101.856h171.584l14.624 102.624c28 8.064 54.848 19.328 80.128 33.568l85.792-58.304 121.344 121.344-62.272 82.88c14.08 25.408 25.152 52.352 32.96 80.416l101.888 19.424v171.584l-102.624 14.624a373.92 373.92 0 0 1-33.568 80.128l58.304 85.792-121.344 121.344-82.88-62.272c-25.408 14.08-52.352 25.152-80.416 32.96l-19.424 101.888h-171.584l-14.624-102.624a373.92 373.92 0 0 1-80.128-33.568L241.92 898.112l-121.344-121.344 62.272-82.88a373.824 373.824 0 0 1-32.96-80.416L48 594.048v-171.584l102.624-14.624c8.064-27.968 19.328-54.848 33.568-80.128L125.888 241.92l121.344-121.344 82.88 62.272a373.856 373.856 0 0 1 80.416-32.96z\" fill=\"#000000\"></path><path d=\"M512 704a192 192 0 1 1 0-384 192 192 0 0 1 0 384z m0-64a128 128 0 1 0 0-256 128 128 0 0 0 0 256z\" fill=\"#000000\"></path></svg>`;
+
+    // 初始化便签与设置（从主进程读取）
+    let notes = [];
+    let currentBgColor = { r: 255, g: 250, b: 200 };
+    let currentTextColor = { r: 51, g: 51, b: 51 };
+    let currentOpacity = 0.9;
+    let isVisible = true;
+    let isPinned = false;
+
+    function hexToRgb(hex) {
+      return {
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16)
+      };
+    }
+
+    // 更新背景颜色和透明度（包括设置弹框）
+    function updateBackground() {
+      const bgStyle = `rgba(${currentBgColor.r}, ${currentBgColor.g}, ${currentBgColor.b}, ${currentOpacity})`;
+      noteContainer.style.background = bgStyle;
+      settingsPanel.style.background = bgStyle;
+    }
+
+    // 更新字体颜色
+    function updateTextColor() {
+      document.querySelectorAll('.note-text, #new-note').forEach(el => {
+        el.style.color = `rgb(${currentTextColor.r}, ${currentTextColor.g}, ${currentTextColor.b})`;
+      });
+    }
+
+    // 渲染便签列表
+    function renderNotes() {
+      noteList.innerHTML = '';
+      notes.forEach((note, index) => {
+        const noteItem = document.createElement('div');
+        noteItem.className = 'note-item';
+        noteItem.innerHTML = `
+          <div class="circle ${note.completed ? 'checked' : ''}" data-index="${index}"></div>
+          <input class="note-text ${note.completed ? 'strike' : ''}" value="${note.text}" data-index="${index}">
+          <span class="delete-btn" data-index="${index}">✕</span>
+        `;
+        noteList.appendChild(noteItem);
+      });
+
+      // 绑定圆圈点击事件
+      document.querySelectorAll('.circle').forEach(circle => {
+        circle.addEventListener('click', async () => {
+          const index = parseInt(circle.dataset.index);
+          notes[index].completed = !notes[index].completed;
+          await window.api.notes.update(notes);
+          renderNotes();
+        });
+      });
+
+      // 绑定文本修改事件
+      document.querySelectorAll('.note-text').forEach(input => {
+        input.addEventListener('input', async () => {
+          const index = parseInt(input.dataset.index);
+          notes[index].text = input.value;
+          await window.api.notes.update(notes);
+        });
+      });
+
+      // 绑定删除按钮事件
+      document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const index = parseInt(btn.dataset.index);
+          notes.splice(index, 1);
+          await window.api.notes.update(notes);
+          renderNotes();
+        });
+      });
+
+      // 更新字体颜色
+      updateTextColor();
+    }
+
+    // 添加新便签
+    newNoteInput.addEventListener('keypress', async (e) => {
+      if (e.key === 'Enter' && newNoteInput.value.trim()) {
+        const id = String(Date.now());
+        notes.push({ id, text: newNoteInput.value.trim(), completed: false, createdAt: Date.now(), updatedAt: Date.now() });
+        await window.api.notes.update(notes);
+        newNoteInput.value = '';
+        renderNotes();
+      }
+    });
+
+    // 设置弹框切换
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      settingsPanel.classList.toggle('active');
+    });
+
+    // 点击弹框外部自动关闭
+    document.addEventListener('click', (e) => {
+      if (!settingsPanel.classList.contains('active')) return;
+      const withinPanel = settingsPanel.contains(e.target);
+      const isSettingsBtn = !!(e.target.closest && e.target.closest('#settings-btn'));
+      const isTitleBar = e.target.closest && e.target.closest('.title-bar');
+      if (!withinPanel && !isSettingsBtn) {
+        settingsPanel.classList.remove('active');
+      }
+      if (isTitleBar) {
+        settingsPanel.classList.remove('active');
+      }
+    });
+
+    // 显示/隐藏切换
+    visibilityBtn.addEventListener('click', () => {
+      isVisible = !isVisible;
+      contentArea.classList.toggle('hidden', !isVisible);
+      visibilityBtn.innerHTML = isVisible ? SVG_EYE : SVG_EYE_OFF;
+    });
+
+    // 置顶/取消置顶切换
+    pinBtn.addEventListener('click', async () => {
+      isPinned = !isPinned;
+      pinBtn.innerHTML = isPinned ? SVG_PIN : SVG_UNPIN;
+      await window.api.window.pin(isPinned);
+    });
+
+    // 关闭按钮：最小化窗口
+    document.querySelector('.close-btn').addEventListener('click', async () => {
+      await window.api.window.minimize();
+    });
+
+    // 透明度滑条事件
+    opacitySlider.addEventListener('input', async () => {
+      currentOpacity = opacitySlider.value;
+      updateBackground();
+      await window.api.settings.update({ opacity: Number(currentOpacity), bgColor: bgColorPicker.value, textColor: textColorPicker.value, isPinned });
+    });
+
+    // 背景颜色选择器事件
+    bgColorPicker.addEventListener('input', async () => {
+      const hex = bgColorPicker.value;
+      currentBgColor = hexToRgb(hex);
+      updateBackground();
+      await window.api.settings.update({ opacity: Number(currentOpacity), bgColor: hex, textColor: textColorPicker.value, isPinned });
+    });
+
+    // 字体颜色选择器事件
+    textColorPicker.addEventListener('input', async () => {
+      const hex = textColorPicker.value;
+      currentTextColor = hexToRgb(hex);
+      updateTextColor();
+      await window.api.settings.update({ opacity: Number(currentOpacity), bgColor: bgColorPicker.value, textColor: hex, isPinned });
+    });
+
+    // 数据目录输入框变更事件
+    const chooseDirBtn = document.getElementById('choose-dir-btn');
+    chooseDirBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const res = await window.api.dialog.chooseDir();
+      if (res && !res.canceled && res.dir) {
+        await window.api.settings.update({ opacity: Number(currentOpacity), bgColor: bgColorPicker.value, textColor: textColorPicker.value, isPinned, dataDir: res.dir });
+      }
+    });
+
+    // 初始化：从主进程加载 notes 与 settings
+    (async () => {
+      try {
+        const loadedNotes = await window.api.notes.read();
+        const settings = await window.api.settings.read();
+
+        notes = Array.isArray(loadedNotes) ? loadedNotes : [];
+
+        currentOpacity = typeof settings.opacity === 'number' ? settings.opacity : 0.9;
+        opacitySlider.value = String(currentOpacity);
+
+        const bgHex = settings.bgColor || '#fffac8';
+        bgColorPicker.value = bgHex;
+        currentBgColor = hexToRgb(bgHex);
+
+        const textHex = settings.textColor || '#333333';
+        textColorPicker.value = textHex;
+        currentTextColor = hexToRgb(textHex);
+
+        isPinned = !!settings.isPinned;
+        pinBtn.innerHTML = isPinned ? SVG_PIN : SVG_UNPIN;
+
+        settingsBtn.innerHTML = SVG_SETTINGS;
+        visibilityBtn.innerHTML = isVisible ? SVG_EYE : SVG_EYE_OFF;
+
+        // 目录由按钮选择，无需预填
+
+        renderNotes();
+        updateBackground();
+        updateTextColor();
+      } catch (e) {
+        renderNotes();
+        updateBackground();
+        updateTextColor();
+      }
+    })();
+  </script>
+</body>
+</html>

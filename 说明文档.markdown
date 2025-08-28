@@ -1,0 +1,131 @@
+# 桌面便签应用开发文档
+
+## 1. 项目概述
+
+本项目是一个轻量级的 Windows 桌面便签应用，旨在提供简洁、美观的便签记录功能。用户可以逐行记录便签，每行便签前有一个圆圈，点击可划掉或恢复内容；支持通过滑条调整窗口透明度；窗口可通过拖拽调整大小；数据存储在本地 JSON 文件中，无需数据库；界面采用现代化的设计风格。
+
+### 1.1 功能特点
+
+- **逐行记录便签**：支持多行便签，每行前面有一个圆圈，点击可切换划线状态（完成/未完成）。
+- **透明度调整**：通过滑条调整窗口透明度（范围 0.3-1.0）。
+- **美观 UI**：采用淡黄色背景、圆润边角、阴影效果，结合 Tailwind CSS 实现现代化界面。
+- **Windows 平台支持**：专为 Windows 设计，可打包为独立的可执行文件。
+- **拖拽调整大小**：窗口支持拖拽改变宽高，最小尺寸为 200x200 像素。
+- **本地文件存储**：便签数据保存为 JSON 文件，存储在用户数据目录中，无需数据库。
+
+## 2. 技术栈与总体架构
+
+- **桌面框架**：Electron（渲染进程使用现有 HTML 原型）
+- **前端**：原型 `sticky_note_prototype_updated.html`（Tailwind CSS via CDN + 原生 JavaScript）
+- **持久化**：主进程使用 `fs` 将 `notes.json` 与 `settings.json` 写入 `app.getPath('userData')`
+- **进程通信**：`ipcMain` / `ipcRenderer`（渲染进程请求读写数据，主进程统一落盘）
+- **窗口管理**：`BrowserWindow` 无边框、可 `setAlwaysOnTop`、隐藏到托盘（Tray）
+
+渲染进程不直接接触文件系统，所有读写通过 IPC 走主进程，确保权限与稳定性。
+
+## 3. 目录结构建议
+
+```
+project-root/
+  ├─ package.json
+  ├─ main/                   # 主进程代码
+  │   ├─ main.ts             # 创建窗口、注册 IPC、托盘
+  │   └─ storage.ts          # 读写 JSON、节流与备份
+  ├─ renderer/
+  │   └─ sticky_note_prototype_updated.html   # 直接复用原型
+  ├─ assets/                 # 图标等资源（.ico/.png）
+  └─ build/                  # 打包产物
+```
+
+小型项目可直接加载本地 HTML，无需额外打包工具；若后续扩展，可引入 Vite 以组件化与多页面支持。
+
+## 4. 数据模型与存储策略
+
+- **Note**：`{ id: string, text: string, completed: boolean, createdAt: number, updatedAt: number }`
+- **Settings**：`{ opacity: number, bgColor: string, textColor: string, isPinned: boolean }`
+- **文件位置**：`<userData>/notes.json`、`<userData>/settings.json`
+- **写入策略**：
+  - 渲染进程每次变更调用 `ipcRenderer.invoke('notes:update', payload)`
+  - 主进程 `storage.ts` 内部使用防抖/节流（如 300ms）聚合写入，减少磁盘 IO
+  - 写前校验与 JSON schema（可选 ajv）
+  - 异常兜底：失败则落本地临时备份 `notes.bak.json` 并在下次启动尝试恢复
+
+## 5. Electron 集成实现要点
+
+1) 窗口创建：
+   - `BrowserWindow` 建议参数：`width: 300, height: 360, frame: false, resizable: true, transparent: true`（需要搭配背景透明样式）
+   - 根据说明文档，支持拖拽调整大小；最小尺寸 `setMinimumSize(200, 200)`
+
+2) 置顶与显示/隐藏：
+   - 置顶：`win.setAlwaysOnTop(isPinned, 'screen-saver')`
+   - 显隐：托盘菜单提供“显示/隐藏”切换；快捷键可选
+
+3) 托盘（Tray）：
+   - 右键菜单：显示、隐藏、退出
+   - 双击托盘图标：显示窗口并置顶
+
+4) IPC 设计（示例通道名）：
+   - `notes:read` / `notes:update`
+   - `settings:read` / `settings:update`
+   - `window:pin` / `window:toggle-visibility`
+
+5) 安全：
+   - 关闭 `nodeIntegration`，开启 `contextIsolation`
+   - 仅暴露受控 API（`preload.js` 中 `contextBridge.exposeInMainWorld`）
+
+## 6. 渲染层改造点（基于现有原型）
+
+- 将当前内存 `notes` 与外观状态改为“从主进程读取 + 变更即 IPC 写入”
+- 初始化时：`notes = await ipcRenderer.invoke('notes:read')`；同步渲染
+- 变更点：
+  - 勾选圆圈、编辑文本、删除、新增时，调用 `notes:update` 并本地更新 UI
+  - 透明度、背景色、字体色、置顶值写入 `settings:update`；界面同时即时预览
+- 键鼠交互：
+  - Enter 新建；Esc 清空输入或关闭设置框
+  - Ctrl+D 删除当前行（可选）；Ctrl+L 划线切换（可选）
+- 可访问性：
+  - 给交互元素添加 `aria-label`，为图标增加 `title` 与可聚焦样式
+
+## 7. 性能与稳定性
+
+- 渲染层对列表使用“重渲染局部”策略：仅更新变更项（事件代理 + 有序 diff）
+- 主进程写盘节流与批处理；异常重试与备份恢复
+- 大量输入时禁用频繁写盘（防抖 300ms）
+
+## 8. 打包与发布
+
+- 使用 `electron-builder`：
+  - Windows 目标：`nsis`（生成安装包）与 `portable`（免安装 exe）
+  - 配置图标：`build.win.icon = assets/icon.ico`
+  - 单实例：`app.requestSingleInstanceLock()`
+- 自动更新（可选）：后续接入自建或 GitHub Releases 更新源
+
+## 9. 快捷键与用户体验（可选增强）
+
+- 全局快捷键：注册/注销置顶切换或快速显示（例如 Alt+Shift+S）
+- 删除确认：可在设置中开关删除确认弹窗
+- 拖拽排序：后续迭代加入，每次变更后持久化顺序
+- 时间戳展示：可在右侧以灰字显示 `updatedAt`（悬浮显示完整时间）
+
+## 10. 测试与日志
+
+- 冒烟测试：启动/退出、增删改查、设置项变更、置顶与托盘、打包可运行
+- 单元测试（可选）：对 `storage.ts` 的读写与合并策略进行测试
+- 日志：主进程失败写盘与异常集中记录到 `<userData>/logs/main.log`
+
+## 11. 最小可用实现（落地清单）
+
+1) 用 Electron 加载 `sticky_note_prototype_updated.html`
+2) 在主进程实现 `notes:read/notes:update` 与 `settings:read/settings:update`
+3) 渲染层接入 IPC：启动加载、变更即写
+4) 持久化到 `<userData>` JSON 文件（含节流、防抖）
+5) 支持置顶切换、显示/隐藏与托盘菜单
+6) 使用 `electron-builder` 生成 Windows 安装包
+
+## 12. 与原型文档的一致性说明
+
+- 原型中的 UI、交互（增删改查、外观设置、显示/隐藏、置顶切换、窗口可调整）均得以保留
+- “置顶”为真实系统置顶（主进程 `setAlwaysOnTop`）
+- 数据不再内存易失，统一持久化到本地 JSON
+
+如需我直接补齐 Electron 主/渲染样板代码与 IPC 通道实现，请告诉我目标打包方式（便携 EXE 或安装包）与应用名称/图标，我可以一次性补充完整模板。
