@@ -64,6 +64,3 @@ project-root/
 ## 脚本
 - `npm run start`：开发启动 Electron
 - `npm run build`：使用 electron-builder 打包 Windows 安装包
-
----
-如需自定义功能（全局快捷键、自动更新、拖拽排序、暗色主题等），欢迎提出需求。
