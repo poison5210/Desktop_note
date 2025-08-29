@@ -69,6 +69,5 @@ project-root/
 ## 脚本
 - `npm run start`：开发启动 Electron
 - `npm run build`：使用 electron-builder 打包 Windows 安装包
-
 ---
 
