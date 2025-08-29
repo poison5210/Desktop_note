@@ -40,6 +40,7 @@ project-root/
    - 打包时优先使用根目录 `icon.ico` 作为安装包/任务栏/托盘图标；若未提供则回退 `icon.png`。
 
 ## 主要功能与使用
+![image](https://github.com/poison5210/Desktop_note/blob/main/image/activity1.gif?raw=true)
 - 新建：在底部输入框输入内容并回车
 - 划线/取消：点击每行左侧圆圈
 - 编辑：直接修改行内文本
@@ -54,6 +55,9 @@ project-root/
 - 置顶：点击图钉图标（调用 `setAlwaysOnTop`）
 - 关闭：点击右上角"✕"最小化到任务栏
 - 拖动：按住标题栏空白区域可以拖动窗口
+
+![image](https://github.com/poison5210/Desktop_note/blob/main/image/activity2.gif?raw=true)
+
 
 ## 数据存储
 - 设置文件：`%APPDATA%/desktop-sticky-notes/settings.json`
